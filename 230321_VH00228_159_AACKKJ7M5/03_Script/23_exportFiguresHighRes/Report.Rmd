@@ -1,0 +1,1171 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = FALSE,        # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+                      fig.dim = c(5, 5),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2',        # PNG optimization level (2=default, 5=slow, 7=very slow)
+                      dev = 'svg');           # Set default rendering to SVG
+
+# Set RMarkdown compatible format for kable 
+options(knitr.table.format = 'markdown')
+```
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "02_generateFigures.R"));
+read_chunk( path=file.path( WORKING_DIR, "06_plots_tables_dimreduc_clustering.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, SAMPLE_NAME, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+# Create output folders
+<<createOutputFolders>>
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="crc32");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+```
+
+
+
+
+# Run informations {.tabset .tabset-fade}
+
+## Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+## Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( paramsEnv);
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+## System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+## R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+<!-- ## {.toc-ignore} -->
+<br /><br />
+
+
+# Load single cell data
+
+<br />
+```{r rmd_dataLoad, warning = TRUE, fig.dim = c(9,6)}
+<<loadData>>
+```
+
+<br /><br />
+
+
+
+
+# Dimensionality reduction
+```{r rmd_dimreduc_plotsPreparation, warning=FALSE}
+<<dimreduc_plotsPreparation>>
+```
+
+## UMAPs {.tabset .tabset-fade}
+
+### Clusters LN+LG {.tabset .tabset-fade .tabset-pills}
+#### Interactive
+```{r rmd_plotDimReducInteractive_colorClusters}
+dimReducWidth  = 950;
+dimReducHeight = 800;
+initialPointSize = 5;
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducInteractive_colorClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster
+```{r rmd_plotDimReducRaster_colorClusters, fig.dim = c(8, 8)}
+showDimReducClusterLabels = TRUE;
+showLegend = FALSE;
+<<plotDimReducRaster_colorClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster nonames
+```{r rmd_plotDimReducRaster_colorClusters_noname, fig.dim = c(8, 8)}
+showDimReducClusterLabels = FALSE;
+showLegend = FALSE;
+<<plotDimReducRaster_colorClusters>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+
+### Clusters LN {.tabset .tabset-fade .tabset-pills}
+#### Interactive
+```{r rmd_plotDimReducInteractive_colorClusters_LN}
+dimReducWidth  = 950;
+dimReducHeight = 800;
+initialPointSize = 5;
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+
+cellselection = sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")
+
+<<plotDimReducInteractive_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster
+```{r rmd_plotDimReducRaster_colorClusters_LN, fig.dim = c(8, 8)}
+showDimReducClusterLabels = TRUE;
+showLegend = FALSE;
+
+cellselection = sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")
+
+<<plotDimReducRaster_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster noname
+```{r rmd_plotDimReducRaster_colorClusters_LN_noname, fig.dim = c(8, 8)}
+showDimReducClusterLabels = FALSE;
+showLegend = FALSE;
+
+cellselection = sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")
+
+<<plotDimReducRaster_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+
+### Clusters LG {.tabset .tabset-fade .tabset-pills}
+#### Interactive
+```{r rmd_plotDimReducInteractive_colorClusters_LG}
+dimReducWidth  = 950;
+dimReducHeight = 800;
+initialPointSize = 5;
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+
+cellselection = sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")
+
+<<plotDimReducInteractive_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster
+```{r rmd_plotDimReducRaster_colorClusters_LG, fig.dim = c(8, 8)}
+showDimReducClusterLabels = TRUE;
+showLegend = FALSE;
+
+cellselection = sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")
+
+<<plotDimReducRaster_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster noname
+```{r rmd_plotDimReducRaster_colorClusters_LG_noname, fig.dim = c(8, 8)}
+showDimReducClusterLabels = FALSE;
+showLegend = FALSE;
+
+cellselection = sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")
+
+<<plotDimReducRaster_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+
+### Clusters M456 {.tabset .tabset-fade .tabset-pills}
+#### Interactive
+```{r rmd_plotDimReducInteractive_colorClusters_M456}
+dimReducWidth  = 950;
+dimReducHeight = 800;
+initialPointSize = 5;
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+
+cellselection = sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6")
+
+<<plotDimReducInteractive_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster
+```{r rmd_plotDimReducRaster_colorClusters_M456, fig.dim = c(8, 8)}
+showDimReducClusterLabels = TRUE;
+showLegend = FALSE;
+
+cellselection = sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6")
+
+<<plotDimReducRaster_colorClusters_cellselection>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+
+
+### Clusters + HTOs {.tabset .tabset-fade .tabset-pills}
+#### Interactive
+```{r rmd_plotDimReducInteractive_colorClusters_symbolHTOs}
+dimReducWidth  = 950;
+dimReducHeight = 800;
+initialPointSize = 5;
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducInteractive_colorClusters_symbolHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+#### Raster
+```{r rmd_plotDimReducRaster_colorClusters_symbolHTOs, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorClusters_symbolHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+### Facet HTOs {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractiveGG_colorClusters_facetHTOs, warning = FALSE} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractiveGG_colorClusters_facetHTOs>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorClusters_facetHTOs, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorClusters_facetHTOs>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+### Facet Clusters {.tabset .tabset-fade .tabset-pills}
+<!-- #### Interactive -->
+<!-- ```{r rmd_plotDimReducInteractiveGG_colorHTOs_facetClusters, warning = FALSE} -->
+<!-- dimReducWidth  = 950; -->
+<!-- dimReducHeight = 800; -->
+<!-- initialPointSize = 5; -->
+<!-- showDimReducClusterLabels = FALSE; -->
+<!-- showLegend = TRUE; -->
+<!-- <<plotDimReducInteractiveGG_colorHTOs_facetClusters>> -->
+<!-- rm(showDimReducClusterLabels); -->
+<!-- rm(showLegend); -->
+<!-- ``` -->
+<!-- <br />   -->
+
+<!-- #### Raster -->
+```{r rmd_plotDimReducRaster_colorHTOs_facetClusters_allInBackground, fig.dim = c(11, 9)}
+showDimReducClusterLabels = FALSE;
+showLegend = TRUE;
+<<plotDimReducRaster_colorHTOs_facetClusters_allInBackground>>
+rm(showDimReducClusterLabels);
+rm(showLegend);
+```
+<br />
+
+
+
+
+### Density: ref groups
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_globalRefGroups, warning=FALSE, fig.dim = c(11, 9)}
+<<plotDimReducRaster_colorDensity_circleDensity_prepareData>>
+
+<<plotDimReducRaster_colorDensity_circleDensity_globalRefGroups>>
+```
+<br />
+
+### Density: Facet Tissue
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByTissue, warning=FALSE, fig.dim = c(10, 6)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByTissue>>
+```
+<br />
+
+### Density: Facet Tissue & Day
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByTissueAndDay, warning=FALSE, fig.dim = c(9, 9)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByTissueAndDay>>
+```
+<br />
+
+### Density: Facet Tissue M123/D0 only
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByTissue_M123, warning=FALSE, fig.dim = c(10, 6)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByTissue_M123>>
+```
+
+<br />
+
+
+### Density: Facet Tissue M456/D7 only
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByTissue_M456, warning=FALSE, fig.dim = c(10, 6)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByTissue_M456>>
+```
+<br />
+
+
+### Density: Facet Mouse and Tissue
+```{r rmd_plotDimReducRaster_colorDensity_circleDensity_facetByMiceAndTissue, warning=FALSE, fig.dim = c(7, 21)}
+<<plotDimReducRaster_colorDensity_circleDensity_facetByMiceAndTissue>>
+```
+<br />
+
+
+
+
+# {.toc-ignore}
+<br /><br />
+
+
+<!-- ######################################################################################################## -->
+
+
+
+
+<!-- # Selected genes -->
+<!-- ```{r rmd_heterogeneity_monitoredGenes, warning = TRUE} -->
+<!-- <<heterogeneity_monitoredGenes>> -->
+<!-- ``` -->
+
+<!-- ## Monitored genes expression {.tabset .tabset-fade} -->
+
+<!-- ### UMAP {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_monitoredGenes_expression_projection_UMAP, fig.dim = c(7, 7), out.width='25%'} -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- <<plotDimReducRaster_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- <<heterogeneity_monitoredGenes_expression_projection>> -->
+
+<!-- ``` -->
+
+<!-- <br /><br /> -->
+
+<!-- ### Clusters violin {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_monitoredGenes_expression_violin, fig.dim = c(7, 7), out.width='25%'} -->
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- <<plotDimReducRaster_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- <<heterogeneity_monitoredGenes_expression_violin>> -->
+<!-- ``` -->
+
+
+
+
+
+
+<!-- # Selected signatures -->
+
+<!-- ## Signatures expression {.tabset .tabset-fade} -->
+
+<!-- ### UMAP {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_signatures_expression_projection_UMAP, fig.dim = c(7, 7), out.width='25%'} -->
+
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- <<plotDimReducRaster_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- <<heterogeneity_signatures_expression_projection>> -->
+
+<!-- ``` -->
+
+<!-- <br /><br /> -->
+
+<!-- ### Signatures violin {.tabset .tabset-fade} -->
+<!-- ```{r rmd_heterogeneity_signatures_expression_violin, fig.dim = c(7, 7), out.width='25%'} -->
+<!-- cat("\n<a href='#clusters-projection'>"); -->
+<!-- <<plotDimReducRaster_thumbnail>> -->
+<!-- cat("</a> \n \n"); -->
+
+<!-- <<heterogeneity_signatures_expression_violin>> -->
+<!-- ``` -->
+
+
+<br /><br />
+
+# Marker genes
+
+## Markers heatmap {.tabset .tabset-fade}
+
+### Heatmap NO IG (mean)
+```{r rmd_heterogeneity_markerGenes_heatmap_mean_noIG, fig.dim = c(5, 9), dev='svg'}
+<<heterogeneity_markerGenes>>
+<<heterogeneity_markerGenes_heatmap_prepare_noIG>>
+<<heterogeneity_markerGenes_heatmap_mean_noIG>>
+```
+
+
+
+<br /><br />
+
+
+
+# Signatures (module scoring)
+```{r rmd_heterogeneity_modules}
+<<heterogeneity_modules>>
+<<heterogeneity_modules_scoring>>
+```
+
+
+## Dotplot {.tabset .tabset-fade}
+### All {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_dotplot_all, fig.dim = c( 9, 11)}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_dotplot>>
+```
+
+### M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_dotplot_m123, fig.dim = c( 9, 11)}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_dotplot>>
+```
+
+### M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_dotplot_m456, fig.dim = c( 9, 11)}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_dotplot>>
+```
+
+### All by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_dotplot_splitTissue_all, fig.dim = c( 15, 11)}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_dotplot_splitTissue>>
+```
+
+### M123 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_dotplot_splitTissue_m123, fig.dim = c( 15, 11)}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_dotplot_splitTissue>>
+```
+
+### M456 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_dotplot_splitTissue_m456, fig.dim = c( 15, 11)}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_dotplot_splitTissue>>
+```
+
+
+
+## Projection {.tabset .tabset-fade}
+### All {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_projection_all, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_projection>>
+```
+
+### M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_projection_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_projection>>
+```
+
+### M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_projection_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_projection>>
+```
+
+### All by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_projection_splitTissue_all, fig.dim = c( 11, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_projection_splitTissue>>
+```
+
+### M123 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_projection_splitTissue_m123, fig.dim = c( 11, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_projection_splitTissue>>
+```
+
+### M456 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_projection_splitTissue_m456, fig.dim = c( 11, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_projection_splitTissue>>
+```
+
+
+
+## Violin {.tabset .tabset-fade}
+### All {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_all, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_violin>>
+```
+
+### M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_violin>>
+```
+
+### M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_violin>>
+```
+
+### All by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_splitTissue_all, fig.dim = c( 10, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_violin_splitTissue>>
+```
+
+### M123 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_splitTissue_m123, fig.dim = c( 10, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_violin_splitTissue>>
+```
+
+### M456 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_modules_expression_violin_splitTissue_m456, fig.dim = c( 10, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_modules_expression_violin_splitTissue>>
+```
+
+
+
+
+
+
+
+
+# MONITORED GENES
+```{r rmd_heterogeneity_monitoredGenes}
+<<heterogeneity_monitoredGenes>>
+```
+
+
+## Projection {.tabset .tabset-fade}
+### All {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_all, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### All by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_splitTissue_all, fig.dim = c( 11, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection_splitTissue>>
+```
+
+### M123 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_splitTissue_m123, fig.dim = c( 11, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection_splitTissue>>
+```
+
+### M456 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_splitTissue_m456, fig.dim = c( 11, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection_splitTissue>>
+```
+
+### LG only {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_lg_only, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### LG M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_lg_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### LG M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_lg_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### LN only {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_ln_only, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### LN M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_ln_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+### LN M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_projection_ln_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+<<heterogeneity_monitoredGenes_expression_projection>>
+```
+
+## Violin {.tabset .tabset-fade}
+### All {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_all, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### All by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_splitTissue_all, fig.dim = c( 10, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin_splitTissue>>
+```
+
+### M123 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_splitTissue_m123, fig.dim = c( 10, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin_splitTissue>>
+```
+
+### M456 by Tissue {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_splitTissue_m456, fig.dim = c( 10, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin_splitTissue>>
+```
+
+
+### LG only {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_lg_only, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### LG M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_lg_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### LG M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_lg_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### LN only {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_ln_only, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### LN M123 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_ln_m123, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+### LN M456 {.tabset .tabset-fade}
+```{r rmd_heterogeneity_monitoredGenes_expression_violin_ln_m456, fig.dim = c( 5, 5), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+<<heterogeneity_monitoredGenes_expression_violin>>
+```
+
+
+<!-- Ending the tabset section -->
+# {.toc-ignore}
+<br /><br />
+
+
+
+
+
+# Scatterplot genes comparison {.tabset .tabset-fade}
+```{r rmd_scatter_genes_prepare}
+<<scatter_genes_prepare>>
+```
+
+
+## Manual Genelists {.tabset .tabset-fade}
+
+For each pair of genes in SCATTER_GENES, create global and cluster facetted scatterplots, and a table listing absolute number of positive cells in clusters, percentage of positive cells in cluster, and number of cells in cluster. 
+
+### All {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_all, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+
+### M123 {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_m123, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+### M456 {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_m456, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN", "LG")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+### LN {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_ln, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+
+### LN M123 {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_ln_m123, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+### LN M456 {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_ln_m456, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LN")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+
+
+### LG {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_lg, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3", "M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+
+### LG M123 {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_lg_m123, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M1", "M2", "M3") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+### LG M456 {.tabset .tabset-fade}
+```{r rmd_scatter_genes_plot_and_table_lg_m456, fig.dim = c(10, 10), out.width='25%', dev = 'png'}
+
+# Define an eventual subselection on object
+scObject = subset(sc10x, cells = Cells(sc10x)[sc10x[["HTOMICE_classification", drop = TRUE]] %in% c("M4", "M5", "M6") &
+                                              sc10x[["HTOTISSUE_classification", drop = TRUE]] %in% c("LG")])
+
+parentLevel=3
+<<scatter_genes_plot_and_table>>
+rm("parentLevel");
+```
+
+
+
+<!-- Ending the tabset section -->
+# {.toc-ignore}
+<br /><br />
+
+```{r rmd_final_saveSessionImage}
+<<final_saveSessionImage>>
+```
+
+
+

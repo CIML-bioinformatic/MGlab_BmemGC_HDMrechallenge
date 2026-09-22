@@ -1,0 +1,383 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = FALSE,        # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+                      fig.dim = c(5, 5),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2',        # PNG optimization level (2=default, 5=slow, 7=very slow)
+                      dev = 'svg');           # Set default rendering to SVG
+
+# Set RMarkdown compatible format for kable 
+options(knitr.table.format = 'markdown')
+```
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+#read_chunk( path=file.path( WORKING_DIR, "02_BCR.R"));
+read_chunk( path=file.path( WORKING_DIR, "03_BCR_scRepertoire.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, SAMPLE_NAME, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+# Create output folders
+<<createOutputFolders>>
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="crc32");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+```
+
+
+
+
+# Run informations {.tabset .tabset-fade}
+
+## Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+## Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( paramsEnv);
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+## System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+## R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+<!-- ## {.toc-ignore} -->
+<br /><br />
+
+
+# Load single cell data
+
+<br />
+```{r rmd_dataLoad, warning = TRUE, fig.dim = c(9,6)}
+<<loadData>>
+
+<<screpertoire_load>>
+```
+
+<br /><br />
+
+# Load contigs (scRepertoire)
+
+```{r rmd_screpertoire_load, warning = TRUE, fig.dim = c(9,6)}
+<<screpertoire_load>>
+```
+
+## Clonal abundance
+
+```{r rmd_screpertoire_clonalAbundance, warning = TRUE, fig.dim = c(9,6)}
+<<screpertoire_clonalAbundance>>
+```
+
+## Clonal length
+
+```{r rmd_screpertoire_clonalLength, warning = TRUE, fig.dim = c(9,6)}
+<<screpertoire_clonalLength>>
+```
+
+## Clonal homeostasis
+
+```{r rmd_screpertoire_clonalHomeostasis, warning = TRUE, fig.dim = c(9,6)}
+<<screpertoire_clonalHomeostasis>>
+```
+
+## Positional entropy
+
+```{r rmd_screpertoire_positionalEntropy, warning = TRUE, fig.dim = c(9,6)}
+<<screpertoire_positionalEntropy>>
+```
+
+
+# Combine GEX / Clonotypes
+
+```{r rmd_screpertoire_combineGexBcr, warning = TRUE, fig.dim = c(9,6)}
+<<screpertoire_combineGexBcr>>
+```
+
+## Clone size
+
+```{r rmd_bcr_clone_size, warning = TRUE, fig.dim = c(9,6)}
+<<bcr_clone_size>>
+```
+
+
+
+
+
+# BCR chains
+
+## Descriptive statistics
+
+```{r rmd_bcr_chains_stats, fig.dim = c(7,7)}
+<<bcr_chains_stats>>
+```
+
+## Projection of chains {.tabset .tabset-fade}
+
+```{r rmd_bcr_constant_chains_combination_projection, fig.dim = c(6,6), dev = 'png'}
+<<bcr_constant_chains_combination_projection>>
+```
+
+
+
+# BCR clonotypes
+
+## Descriptive statistics
+
+```{r rmd_bcr_stats, fig.dim = c(7,7)}
+<<bcr_clonotypes_stats>>
+```
+
+
+## Projection of top clonotypes (nbCells)
+
+```{r rmd_bcr_top_clonotypes_projections, fig.dim = c(6,6), out.width = "25%", dev = 'png'}
+<<bcr_top_clonotypes_projection>>
+```
+
+## Clonotypes counts {.tabset .tabset-fade}
+
+### Top 50
+
+```{r rmd_clonotype_counts_heatmap, fig.dim = c(17,11)}
+# clonotype_colname = "clonotype_manual_heavy_and_light"
+# Define an eventual subselection on object
+#scObject = sc10x
+
+<<clonotype_counts_heatmap>>
+```
+
+
+
+
+## Clonotypes overlap {.tabset .tabset-fade}
+
+### Top 50 {.tabset .tabset-fade}
+
+```{r rmd_clonotype_overlap_currentmouse, fig.dim = c(12, 10)}
+#clonotype_colname = "clonotype_manual_heavy_and_light"
+<<clonotype_overlap_currentmouse>>
+```
+
+### Custom: Top 50 {.tabset .tabset-fade}
+
+```{r rmd_clonotype_overlap_customSergio, fig.dim = c(12,10)}
+#clonotype_colname = "clonotype_manual_heavy_and_light"
+<<clonotype_overlap_customSergio>>
+```
+
+
+## Circlize {.tabset .tabset-fade}
+
+This function will take the meta data from the product of combineExpression() and generate a relational data frame to be used for a chord diagram. Each cord will represent the number of clone unique and shared across the multiple group.by variable. If using the downstream circlize R package, please read and cite the following manuscript.
+
+### All: LN+LG
+
+```{r rmd_bcr_clonotypes_circlize_ALL, fig.dim = c(10,10)}
+<<bcr_clonotypes_circlize_ALL>>
+```
+
+### LN
+
+```{r rmd_bcr_clonotypes_circlize_LN, fig.dim = c(10,10)}
+<<bcr_clonotypes_circlize_LN>>
+```
+
+### LG
+
+```{r rmd_bcr_clonotypes_circlize_LG, fig.dim = c(10,10)}
+<<bcr_clonotypes_circlize_LG>>
+```
+
+
+## ClonalNetwork
+
+This function generates a network based on clonal proportions of an indicated identity and then superimposes the network onto a single-cell object dimensional reduction plot.
+
+```{r rmd_bcr_clonotypes_clonalNetwork_LN_LG, fig.dim = c(12,10), out.width = "50%"}
+<<bcr_clonotypes_clonalNetwork_LN_LG>>
+```
+
+
+## Clonal bias
+
+The metric seeks to quantify how individual clones are skewed towards a specific cellular compartment or cluster. A clone bias of 1 - indicates that a clone is composed of cells from a single compartment or cluster, while a clone bias of 0 - matches the background subtype distribution. Please read and cite the following manuscript if using clonalBias().
+
+```{r rmd_bcr_clonotypes_clonalBias, fig.dim = c(12,10)}
+<<bcr_clonotypes_clonalBias>>
+```
+
+## Venn
+
+```{r rmd_bcr_clonotypes_venn, fig.dim = c(12,10)}
+<<bcr_clonotypes_venn>>
+```
+
+
+## Venn Merge
+
+This script relies on what 'venn' precomputed results (csv) it finds in output folder.
+In a clean/new run without any precomputed csv file, the first report should only contain one bar, the second two, etc...
+The "launch report compilation" script can be run twice to get a consistent plot in all reports (ther is a loop on mice/samples in this script to generate a report for each sample).
+```{r rmd_bcr_clonotypes_venn_merge, fig.dim = c(4,4)}
+<<bcr_clonotypes_venn_merge>>
+```
+
+
+
+<!-- Ending the tabset section -->
+# {.toc-ignore}
+<br /><br />
+
+
+
+
+

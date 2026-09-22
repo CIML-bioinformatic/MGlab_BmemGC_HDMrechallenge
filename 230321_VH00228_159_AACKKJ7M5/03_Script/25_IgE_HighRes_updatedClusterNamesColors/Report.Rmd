@@ -1,0 +1,374 @@
+---
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 100%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    });
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    });
+  });
+</script>
+
+
+
+
+```{r rmd_setKnitrOptions, include=FALSE}
+# Set hook for PNG optimization ('optipng' must be installed on system)
+#knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+
+# Set chunks default options
+knitr::opts_chunk$set(results='asis',
+                      echo = FALSE,           # Do not show chunks code
+                      message = FALSE,        # Hide R regular text output in reports
+                      warning = FALSE,        # Show warning messages
+                      error = FALSE,          # Stop generating report on errors
+                      cache = FALSE,          # Disable chunk result caching
+                      cache.comments = FALSE, # Changing comments does not invalidate cache
+                      fig.dim = c(5, 5),      # Size of device for R figures
+                      autodep = TRUE,         # Automatic chunk dependencies if cache enabled
+                      optipng = '-o2',        # PNG optimization level (2=default, 5=slow, 7=very slow)
+                      dev = 'svg');           # Set default rendering to SVG
+
+# Set RMarkdown compatible format for kable 
+options(knitr.table.format = 'markdown')
+```
+
+
+
+
+<!-- Load spectrum color picker code -->
+```{js loadSpectrumJS, echo = FALSE, code=readLines("spectrum.js")}
+```
+```{css loadSpectrumCSS, echo = FALSE, code=readLines("spectrum.css")}
+```
+
+<!-- Prepare a js function extracting traces color from plotly figure -->
+```{js getColorTab, echo = FALSE}
+
+// Ask figure template from plotly, extract markers color (scatter and scattergl only), and place them in clipboard
+getColorTab = function(plotLyFigure, type = "scatter", colorFormatFun = "hex") 
+  { 
+    var template = Plotly.makeTemplate(plotLyFigure);
+    var resultColorString = "";
+    for (curTrace in template.data[type])
+    {
+      // Only use traces having markers
+      if(template.data[type][curTrace].mode == "markers") resultColorString += '"' + template.data[type][curTrace].name + '" = "' + tinycolor(template.data[type][curTrace].marker.color).toString(colorFormatFun) + '"\n';
+    }
+    // Create a dummy element to copy content to clipboard
+    var textarea = document.createElement("textarea"); textarea.textContent = resultColorString; textarea.style.position = "fixed"; document.body.appendChild(textarea); textarea.select(); document.execCommand("copy"); document.body.removeChild(textarea);
+    alert("\n" + resultColorString + "\n\nCopied to clipboard !");
+  } 
+```
+
+
+
+
+```{r rmd_loadParamsAndDependencies, warning=FALSE, cache = FALSE}
+### Define working folder
+WORKING_DIR   = getwd();
+
+
+### Load libraries, global functions/variables, and chunks
+source( file.path( WORKING_DIR, "00_generalDeps.R"));
+
+# Import chunks from source files
+read_chunk( path=file.path( WORKING_DIR, "01_prepareData.R"));
+read_chunk( path=file.path( WORKING_DIR, "08_IghE_expressing_cells.R"));
+read_chunk( path=file.path( WORKING_DIR, "09_IghE_expressing_VS_others.R"));
+read_chunk( path=file.path( WORKING_DIR, "90_finalize.R"));
+```
+
+
+
+
+---
+title: `r paste( GLOBAL_DESCRIPTION, SAMPLE_NAME, ANALYSIS_STEP_NAME, sep ="<BR>")`
+---
+
+
+
+
+```{r rmd_initFunctions}
+
+# Create output folders
+<<createOutputFolders>>
+
+### Record starting time (for report and file names)
+startTime = Sys.time();
+startTimeReport   = format( startTime, "%Y %m %d %H:%M:%S")
+startTimeFileName = format( startTime, "%Y_%m_%d_%H_%M_%S")
+
+
+### Initialize utils
+
+# Create a hash for all parameters
+paramsHash = digest( environment(), algo="crc32");
+
+# Set seed for pseudo random number generator
+set.seed(SEED);
+
+# Set the use of multiple cores using 'future' library, as implemented in Seurat3 when possible
+# https://github.com/satijalab/seurat/issues/457
+plan(strategy = "multicore", workers = NBCORES);
+
+```
+
+
+
+
+# Run informations {.tabset .tabset-fade}
+
+## Run
+<center>
+```{r rmd_runInfo_run}
+pander( c( 'Date'     = startTimeReport,
+           'Sample'   = EXPERIMENT_NAME,
+           'Hash'     = paramsHash));
+```
+</center>
+
+## Parameters
+```{r rmd_runInfo_params}
+listParams = as.list( paramsEnv);
+pander(listParams[order(names(listParams))]); # Show params in alphabetical order
+```
+
+## System
+<center>
+```{r rmd_runInfo_sysInfo}
+showSimpleDT( Sys.info())
+```
+</center>
+
+## R
+```{r rmd_runInfo_r}
+pander( sessionInfo());
+```
+
+<!-- Ending the tabset section -->
+<!-- ## {.toc-ignore} -->
+<br /><br />
+
+
+# Load single cell data
+
+<br />
+```{r rmd_dataLoad, warning = TRUE, fig.dim = c(9,6)}
+<<loadData>>
+```
+
+<br /><br />
+
+
+
+
+# IgE Expression {.tabset .tabset-fade .tabset-pills}
+
+```{r rmd_plot_umap_ige_positive_cells_prepare_data}
+<<plotsPreparation>>
+<<plot_umap_ige_positive_cells_prepare_data>>
+```
+
+## Positive cells
+```{r rmd_plot_umap_ige_positive_cells, fig.dim = c( 10, 10)}
+<<plot_umap_ige_positive_cells>>
+```
+
+## Split tissue
+```{r rmd_plot_umap_ige_positive_cells_split_tissue, fig.dim = c( 16, 8)}
+<<plot_umap_ige_positive_cells_split_tissue>>
+```
+
+## Color tissue
+```{r rmd_plot_umap_ige_positive_cells_color_by_tissue, fig.dim = c( 10, 10)}
+<<plot_umap_ige_positive_cells_color_by_tissue>>
+```
+
+## Color cluster
+```{r rmd_plot_umap_ige_positive_cells_split_mouse_color_by_cluster, fig.dim = c( 10, 10)}
+<<plot_umap_ige_positive_cells_split_mouse_color_by_cluster>>
+```
+
+
+
+# Ige VS Ohers {.tabset .tabset-fade}
+
+## LN
+
+Cell identity based on highest igh expression (NA => None expressed)
+
+```{r rmd_ige_vs_others_LN}
+scObject = subset(sc10x, subset = HTOTISSUE_classification == "LN")
+<<ige_vs_others>>
+```
+
+
+### Ige expression distribution {.tabset .tabset-fade .tabset-pills}
+
+#### Global
+```{r rmd_ige_expression_distribution_LN, fig.dim = c( 8, 7)}
+<<ige_expression_distribution>>
+```
+
+#### Color: Cluster
+```{r rmd_ige_expression_distribution_colorCluster_LN, fig.dim = c( 8, 7)}
+<<ige_expression_distribution_colorCluster>>
+```
+
+#### Color: IgIdentity
+```{r rmd_ige_expression_distribution_colorIgIdent_LN, fig.dim = c( 8, 7)}
+<<ige_expression_distribution_colorIgIdent>>
+```
+
+#### Color: Cluster - Facet: IgIdentity
+```{r rmd_ige_expression_distribution_colorCluster_facetIgIdent_LN, fig.dim = c( 10, 7)}
+<<ige_expression_distribution_colorCluster_facetIgIdent>>
+```
+
+
+
+### Ige transcribing cells by identity and cluster
+
+ighe-transcribing cells were associated with each cluster and constant region. Cells of the grid are labeled by the total number of ighe-transcribing cells and colored by the percentage of cells in each cluster that are IGHE-transcribing.
+
+```{r rmd_ige_vs_others_table_LN, fig.dim = c( 7, 7)}
+<<ige_vs_others_table>>
+```
+
+
+
+
+
+## LG
+
+Cell identity based on highest igh expression (NA => None expressed)
+
+```{r rmd_ige_vs_others_LG}
+scObject = subset(sc10x, subset = HTOTISSUE_classification == "LG")
+<<ige_vs_others>>
+```
+
+
+### Ige expression distribution {.tabset .tabset-fade .tabset-pills}
+
+#### Global
+```{r rmd_ige_expression_distribution_LG, fig.dim = c( 8, 7)}
+<<ige_expression_distribution>>
+```
+
+#### Color: Cluster
+```{r rmd_ige_expression_distribution_colorCluster_LG, fig.dim = c( 8, 7)}
+<<ige_expression_distribution_colorCluster>>
+```
+
+#### Color: IgIdentity
+```{r rmd_ige_expression_distribution_colorIgIdent_LG, fig.dim = c( 8, 7)}
+<<ige_expression_distribution_colorIgIdent>>
+```
+
+#### Color: Cluster - Facet: IgIdentity
+```{r rmd_ige_expression_distribution_colorCluster_facetIgIdent_LG, fig.dim = c( 10, 7)}
+<<ige_expression_distribution_colorCluster_facetIgIdent>>
+```
+
+
+
+### Ige transcribing cells by identity and cluster
+
+ighe-transcribing cells were associated with each cluster and constant region. Cells of the grid are labeled by the total number of ighe-transcribing cells and colored by the percentage of cells in each cluster that are IGHE-transcribing.
+
+```{r rmd_ige_vs_others_table_LG, fig.dim = c( 7, 7)}
+<<ige_vs_others_table>>
+```
+
+
+
+
+
+
+## ALL
+
+Cell identity based on highest igh expression (NA => None expressed)
+
+```{r rmd_ige_vs_others_ALL}
+scObject = sc10x
+<<ige_vs_others>>
+```
+
+
+### Ige expression distribution {.tabset .tabset-fade .tabset-pills}
+
+#### Global
+```{r rmd_ige_expression_distribution_ALL, fig.dim = c( 8, 7)}
+<<ige_expression_distribution>>
+```
+
+#### Color: Cluster
+```{r rmd_ige_expression_distribution_colorCluster_ALL, fig.dim = c( 8, 7)}
+<<ige_expression_distribution_colorCluster>>
+```
+
+#### Color: IgIdentity
+```{r rmd_ige_expression_distribution_colorIgIdent_ALL, fig.dim = c( 8, 7)}
+<<ige_expression_distribution_colorIgIdent>>
+```
+
+#### Color: Cluster - Facet: IgIdentity
+```{r rmd_ige_expression_distribution_colorCluster_facetIgIdent_ALL, fig.dim = c( 10, 7)}
+<<ige_expression_distribution_colorCluster_facetIgIdent>>
+```
+
+
+
+### Ige transcribing cells by identity and cluster
+
+ighe-transcribing cells were associated with each cluster and constant region. Cells of the grid are labeled by the total number of ighe-transcribing cells and colored by the percentage of cells in each cluster that are IGHE-transcribing.
+
+```{r rmd_ige_vs_others_table_ALL, fig.dim = c( 7, 7)}
+<<ige_vs_others_table>>
+```
+
+

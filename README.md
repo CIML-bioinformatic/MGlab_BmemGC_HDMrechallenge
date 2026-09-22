@@ -122,9 +122,8 @@ Rebuilding an image from its Dockerfile does not guarantee an identical environm
 |---|---|---|
 | `01_r411_tidyverse_seurat4.tar.gz` | R 4.1.1, Seurat 4.1.0, scRepertoire 1.4.0 | `02`, `04`, `06a/b/c`, `10a/b`, `13a/b/c`, `14a/b/c`, `23` |
 | `02_r363_seurat_scvelo021_jupyterlab.tar.gz` | R 3.6.3, Python 3.7.3, scVelo 0.2.1, velocyto 0.17.17, JupyterLab | `08`, `09c/d`, `18c/d` |
-| `03_r42_sccomp.tar.gz` | R 4.2.0, Seurat 5.0.0, sccomp 1.7.6 | `20a`, `25` |
+| `03_r42_sccomp_shazam.tar.gz` | R 4.2.0, Seurat 5.0.0, sccomp 1.7.6, shazam 1.2.0, alakazam 1.3.0 | `20a`, `25` |
 | `04_r44_scRepertoire.tar.gz` | R 4.4.3, Seurat 5.0.0, scRepertoire 2.5.3 | `21b`, `24` |
-| `03_r42_sccomp_shazam.tar.gz` | as `03_r42_sccomp` plus shazam 1.2.0 and alakazam 1.3.0 | somatic hypermutation analysis |
 
 Alignment (`01`) used the 10x Genomics **Cell Ranger 7.0.1** singularity image, see `03_Script/01_CellRanger_FeatureBarcoding/execute_cell_ranger_multi.sh`.
 

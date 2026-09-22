@@ -116,14 +116,14 @@ Analysis steps that were purely exploratory are not included.
 
 Environments were built with Docker. The Dockerfiles are in `02_Container/`; the corresponding **binary images are on Zenodo**.
 
-Rebuilding an image from its Dockerfile does not guarantee an identical environment (package versions have since moved), so downloading the images is the reliable route.
+Rebuilding an image from its Dockerfile does not guarantee an identical environment (package versions have since moved), so downloading the images is the reliable route. Note that the image name restored by `docker load` is the one recorded when the image was saved, given in brackets below; it does not always match the archive file name.
 
-| Image (Zenodo) | Contents | Steps |
+| Archive on Zenodo (image name after `docker load`) | Contents | Steps |
 |---|---|---|
-| `01_r411_tidyverse_seurat4.tar.gz` | R 4.1.1, Seurat 4.1.0, scRepertoire 1.4.0 | `02`, `04`, `06a/b/c`, `10a/b`, `13a/b/c`, `14a/b/c`, `23` |
-| `02_r363_seurat_scvelo021_jupyterlab.tar.gz` | R 3.6.3, Python 3.7.3, scVelo 0.2.1, velocyto 0.17.17, JupyterLab | `08`, `09c/d`, `18c/d` |
-| `03_r42_sccomp_shazam.tar.gz` | R 4.2.0, Seurat 5.0.0, sccomp 1.7.6, shazam 1.2.0, alakazam 1.3.0 | `20a`, `25` |
-| `04_r44_scRepertoire.tar.gz` | R 4.4.3, Seurat 5.0.0, scRepertoire 2.5.3 | `21b`, `24` |
+| `01_r411_tidyverse_seurat4.tar.gz` (`rfenouil/r411_tidyverse_seurat4`) | R 4.1.1, Seurat 4.1.0, scRepertoire 1.4.0 | `02`, `04`, `06a/b/c`, `10a/b`, `13a/b/c`, `14a/b/c`, `23` |
+| `02_r363_seurat_scvelo021_jupyterlab.tar.gz` (`rfenouil/r3.6.3_seurat_scvelo0.2.1_jupyter`) | R 3.6.3, Python 3.7.3, scVelo 0.2.1, velocyto 0.17.17, JupyterLab | `08`, `09c/d`, `18c/d` |
+| `03_r42_sccomp_shazam.tar.gz` (`r42_sccomp_shazam`) | R 4.2.0, Seurat 5.0.0, sccomp 1.7.6, shazam 1.2.0, alakazam 1.3.0 | `20a`, `25` |
+| `04_r44_scRepertoire.tar.gz` (`r44_screpertoire`) | R 4.4.3, Seurat 5.0.0, scRepertoire 2.5.3 | `21b`, `24` |
 
 Alignment (`01`) used the 10x Genomics **Cell Ranger 7.0.1** singularity image, see `03_Script/01_CellRanger_FeatureBarcoding/execute_cell_ranger_multi.sh`.
 

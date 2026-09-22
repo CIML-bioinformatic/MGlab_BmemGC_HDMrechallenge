@@ -21,12 +21,13 @@ docker save r44_screpertoire > r44_screpertoire.tar.gz
 
 
 
+
 ## Run Rstudio
 
 Give user details to internal script which sets user and permissions:
 
 ```
-docker run -d --name r42_sccomp -p 9898:8787 -e PASSWORD=yourPass -e USER=$(whoami) -e USERID=$(id -u) -e GROUPID=$(id -g) -v /mnt:/mnt r42_sccomp_shazam
+docker run -d --name r44_screpertoire -p 9898:8787 -e PASSWORD=yourPass -e USER=$(whoami) -e USERID=$(id -u) -e GROUPID=$(id -g) -v /mnt:/mnt r44_screpertoire
 ```
 
 Then connect to the machine running docker (localhost) on mapped port (8787):

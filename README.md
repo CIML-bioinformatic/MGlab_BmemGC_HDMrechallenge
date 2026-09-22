@@ -32,7 +32,7 @@ The three components of the study are distributed as follows:
 |---|---|
 | Source code and container recipes | **this repository** |
 | Raw sequencing data (FASTQ) | **ENA** [PRJEB105421](https://www.ebi.ac.uk/ena/browser/view/PRJEB105421) |
-| Reference files, analysis results, HTML reports and container images | **Zenodo** [10.5281/zenodo.21504424](https://doi.org/10.5281/zenodo.21504424) |
+| Reference files, analysis results, HTML reports and container images | **Zenodo** [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21504424.svg)](https://doi.org/10.5281/zenodo.21504424) |
 
 ---
 

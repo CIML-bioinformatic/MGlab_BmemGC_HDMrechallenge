@@ -146,6 +146,24 @@ docker load -i 01_r411_tidyverse_seurat4.tar.gz
 
 The archive provides `01_Reference/` (gene lists, hashtag reference, cell selections) and `05_Output/` (the results of every step). Code and data are kept in separate trees, mirroring each other.
 
+**1b. (Optional) Start from the raw reads instead.**
+
+The Zenodo archive already contains the output of `01_CellRanger_FeatureBarcoding`, so step 01 can be skipped. To re-run it from the FASTQ deposited in ENA ([PRJEB105421](https://www.ebi.ac.uk/ena/browser/view/PRJEB105421)), recreate a `00_RawData` folder next to `01_Reference/` and `05_Output/`:
+
+```
+00_RawData/
+├── mRNA_fastq/   230321_GEX_Library_Bmem_GC_mRNA{1..4}_S{1..4}_L001_R{1,2}_001.fastq.gz
+│                 230321_GEX_Library_PC_mRNA{1..4}_S{7..10}_L001_R{1,2}_001.fastq.gz
+├── HTO_fastq/    230321_HTO_Library_Bmem_GC_HTO_S5_L001_R{1,2}_001.fastq.gz
+└── BCR_fastq/    230321_BCR_Library_Bmem_GC_BCR_S6_L001_R{1,2}_001.fastq.gz
+```
+
+File names matter. In `01_Reference/01_CellRanger/config_multi.csv` the `fastq_id` column holds a **prefix**, not a file name: Cell Ranger picks up every file of the directory whose name starts with it, following the 10x convention `<fastq_id>_S<n>_L<lane>_R<1|2>_001.fastq.gz`. Renaming the files, or placing them in another directory, breaks the match silently.
+
+Symbolic links are enough, and that is how the original project was set up.
+
+Then edit `config_multi.csv` itself: its `fastqs` column and its three `reference` entries (gene expression, VDJ, feature) all hold **absolute paths** pointing to the machine where the analysis was run, and must be adapted. Note that step 01 is therefore the one case where `globalParams.R` is not the only file to edit.
+
 **2. Set the paths.**
 
 Edit `03_Script/globalParams.R` so that `PATH_PROJECT` points to the folder where the data were unpacked. Every step derives its input and output paths from that file, so this is the only place to change.

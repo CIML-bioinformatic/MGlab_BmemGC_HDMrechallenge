@@ -1,8 +1,8 @@
-# Access to germinal center IL-4 microniches drives tissue-divergence of IgE memory responses
+# Germinal center interleukin-4 microniches drive tissue divergence of IgE memory B cell responses
 
 ## Article information
 
-**Title:** Access to germinal center IL-4 microniches drives tissue-divergence of IgE memory responses
+**Title:** Germinal center interleukin-4 microniches drive tissue divergence of IgE memory B cell responses
 
 **Authors:** Sergio Villazala-Merino 1\*, Lucas Bertoia 1, Romain Fenouil 1, Mohammed Zghaebi 2, Myriam Moussa 1, Samuel Origlio 1, Claude Gregoire 1, Laura Almada 3, Mara Esposito 4, Stefano Colombo 5, Adriana Gruppi 3, Judith E Allen 5, Andrew MacDonald 5,6, Nicolas Fazilleau 7, Pierre Bruhns 8, Julia Eckl-Dorna 2, Carolyn G King 4, & Mauro Gaya 1,9\*
 
@@ -18,7 +18,9 @@
 
 \* Correspondence: villazala@ciml.univ-mrs.fr (S.V.M.), gaya@ciml.univ-mrs.fr (M.G.)
 
-**Summary:** Immunoglobulin E (IgE) drives allergy, yet how memory B cells (MBCs) reactivate to produce IgE, and how tissue localization shapes recall responses, remains unclear. Using mouse models of airborne exposure to house dust mites and Alternaria, we found that allergen sensitization generates lymphoid- and lung-resident MBCs. Upon allergen re-exposure, these populations followed distinct differentiation trajectories: lymph node MBCs engaged a germinal center (GC)-dependent pathway that generated IgG1+ and IgE+ plasma cells (PCs), whereas lung MBCs followed a GC-independent route producing mainly IgG1+ PCs. GC re-entry granted MBCs access to an IL-4-rich microniche formed by Tfh cells, which was essential for IgE production. Disrupting GC re-entry, IL-4 signaling, or Tfh-derived IL-4 during recall markedly reduced allergen-specific IgE. These findings reveal a spatially and cytokine-restricted mechanism that confines IgE memory to lymphoid organs, positioning GC IL-4 microniches as anatomical safeguards against IgE production at barrier sites frequently exposed to environmental antigens.
+**Published in:** *Immunity*, September 2026. [doi:10.1016/j.immuni.2026.08.013](https://doi.org/10.1016/j.immuni.2026.08.013)
+
+**Summary:** Immunoglobulin E (IgE) drives allergy, yet how memory B cells (MBCs) reactivate to produce IgE, and how tissue localization shapes recall responses, remains unclear. Using mouse models of airborne exposure to house dust mites and Alternaria, we found that allergen sensitization generated lymph node (LN)- and lung-resident MBCs. Upon allergen re-exposure, MBCs follow two differentiation trajectories: a germinal center (GC)-dependent pathway, generating IgG1+ and IgE+ plasma cells (PCs) and occurring predominantly in LNs, and a GC-independent pathway, generating mainly IgG1+ PCs and present in both organs. GC re-entry granted MBCs access to an interleukin (IL)-4-rich microniche formed by T follicular helper (Tfh) cells, which was essential for IgE production. Disrupting GC re-entry, IL-4 signaling, or Tfh cell-derived IL-4 during recall markedly reduced allergen-specific IgE. These findings reveal a spatially and cytokine-restricted mechanism that confines IgE memory to lymphoid organs, positioning GC IL-4 microniches as anatomical safeguards against IgE production at barrier sites frequently exposed to environmental antigens.
 
 ---
 
